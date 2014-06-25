@@ -1,0 +1,45 @@
+apply plugin: 'android'
+
+android {
+    compileSdkVersion 19
+    buildToolsVersion "19.1.0"
+
+    defaultConfig {
+        applicationId "io.cine.ffmpegbridge"
+        minSdkVersion 18
+        targetSdkVersion 19
+        versionCode 1
+        versionName "1.0"
+    }
+
+    buildTypes {
+        release {
+            runProguard false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+        }
+    }
+    sourceSets.main {
+        jniLibs.srcDir 'src/main/libs'
+        jni.srcDirs = [] // disable NDK-auto-build
+    }
+
+    Properties properties = new Properties()
+    properties.load(project.rootProject.file('local.properties').newDataInputStream())
+
+    task ndkBuild(type: Exec) {
+        def ndkDir = properties.getProperty('ndk.dir')
+        commandLine "$ndkDir/ndk-build", '-C', file('src/main').absolutePath
+    }
+
+    task cleanNdkBuild(type: Exec) {
+        def ndkDir = properties.getProperty('ndk.dir')
+        commandLine "$ndkDir/ndk-build", '-C', file('src/main').absolutePath, "clean"
+    }
+
+    tasks.withType(JavaCompile) { compileTask -> compileTask.dependsOn ndkBuild }
+    clean.dependsOn cleanNdkBuild
+}
+
+dependencies {
+    compile fileTree(dir: 'libs', include: ['*.jar'])
+}

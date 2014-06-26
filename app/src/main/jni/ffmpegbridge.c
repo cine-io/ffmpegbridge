@@ -1,6 +1,7 @@
 #include <jni.h>
 #include <android/log.h>
 #include "ffmpegbridge.h"
+#include "logdump.h"
 
 #include "libavcodec/avcodec.h"
 #include "libavformat/avformat.h"
@@ -58,46 +59,55 @@ void init(){
     avcodec_register_all();
 }
 
-// get a user-friendly error string from an error number
-char* stringForAVErrorNumber(int errorNumber){
-    char *errorBuffer = malloc(sizeof(char) * AV_ERROR_MAX_STRING_SIZE);
-
-    int strErrorResult = av_strerror(errorNumber, errorBuffer, AV_ERROR_MAX_STRING_SIZE);
-    if (strErrorResult != 0) {
-        LOGE("av_strerror error: %d", strErrorResult);
-        return NULL;
-    }
-    return errorBuffer;
-}
-
-// add a video stream
-void addVideoStream(AVFormatContext *dest){
+// add a stream
+AVStream* addStream(AVFormatContext *dest, enum AVCodecID codecId) {
 	AVCodecContext *c;
 	AVStream *st;
 	AVCodec *codec;
 
-	// TODO: this can probably be removed
-	codec = avcodec_find_encoder(VIDEO_CODEC_ID);
+	codec = avcodec_find_encoder(codecId);
 	if (!codec) {
-		LOGI("add_video_stream codec not found, as expected. No encoding necessary");
+		LOGI("addStream codec not found (probably okay)");
+//		codec = av_malloc(sizeof(AVCodec));
+//		codec->type = AVMEDIA_TYPE_VIDEO;
 	}
 
 	st = avformat_new_stream(dest, codec);
 	if (!st) {
 		LOGE("add_video_stream could not alloc stream");
 	}
+    st->id = dest->nb_streams-1;
+    c = st->codec;
+	LOGI("addStream at index %d", st->index);
 
+    // TODO: this is not in muxing.c
+	//avcodec_get_context_defaults3(c, codec);
+
+    // TODO: need this?
+	// Some formats want stream headers to be separate.
+	if (dest->oformat->flags & AVFMT_GLOBALHEADER) {
+	    LOGD("addStream: use separate headers");
+		c->flags |= CODEC_FLAG_GLOBAL_HEADER;
+	}
+
+	return st;
+}
+
+// add a video stream
+void addVideoStream(AVFormatContext *dest){
+	AVCodecContext *c;
+
+	AVStream *st = addStream(dest, VIDEO_CODEC_ID);
 	videoStreamIndex = st->index;
-	LOGI("addVideoStream at index %d", videoStreamIndex);
-	c = st->codec;
-
-	avcodec_get_context_defaults3(c, codec);
-
-	c->codec_id = VIDEO_CODEC_ID;
+    c = st->codec;
+    AVCodec codec = {0};
+    codec.type = AVMEDIA_TYPE_VIDEO;
+    avcodec_get_context_defaults3(c, &codec);
 
     // video parameters
-   	// TODO: need bit_rate here?
-	//c->bit_rate = 1500000;
+	c->codec_id = VIDEO_CODEC_ID;
+	c->bit_rate = 1500000;
+	c->pix_fmt = VIDEO_PIX_FMT;
 	c->width = videoWidth;
 	c->height = videoHeight;
 
@@ -107,62 +117,27 @@ void addVideoStream(AVFormatContext *dest){
 	// identical to 1.
 	c->time_base.den = 30;
 	c->time_base.num = 1;
-	// TODO: need this?
-	// emit one intra frame every twelve frames at most
-	//c->gop_size      = 12;
-	c->pix_fmt       = VIDEO_PIX_FMT;
 
-    // TODO: need this?
-	// Some formats want stream headers to be separate.
-	if (dest->oformat->flags & AVFMT_GLOBALHEADER) {
-	    LOGD("addVideoStream: use separate headers");
-		c->flags |= CODEC_FLAG_GLOBAL_HEADER;
-	}
+	// TODO: need this?
+	c->gop_size = 12; // emit one intra frame every twelve frames at most
 }
 
 // add an audio stream
-void addAudioStream(AVFormatContext *formatContext){
+void addAudioStream(AVFormatContext *dest){
 	AVCodecContext *c;
-	AVStream *st;
-	AVCodec *codec;
 
-	// TODO: this can probably be removed
-	codec = avcodec_find_encoder(AUDIO_CODEC_ID);
-	if (!codec) {
-		LOGE("add_audio_stream codec not found");
-	}
-	LOGI("add_audio_stream found codec_id: %d", codec->id);
-	st = avformat_new_stream(formatContext, codec);
-	if (!st) {
-		LOGE("add_audio_stream could not alloc stream");
-	}
-
+	AVStream *st = addStream(dest, AUDIO_CODEC_ID);
 	audioStreamIndex = st->index;
-	LOGI("addAudioStream at index %d", audioStreamIndex);
-
-   	// TODO: what is st->id?
-	//st->id = 1;
-	c = st->codec;
-	avcodec_get_context_defaults3(c, codec);
-	c->strict_std_compliance = FF_COMPLIANCE_UNOFFICIAL; // for native aac support
+    c = st->codec;
 
 	// audio parameters
-   	// TODO: need bit_rate here?
-	//c->bit_rate    = bit_rate;
+	c->strict_std_compliance = FF_COMPLIANCE_UNOFFICIAL; // for native aac support
+	c->bit_rate    = 128000;
 	c->sample_fmt  = AUDIO_SAMPLE_FMT;
 	c->sample_rate = audioSampleRate;
 	c->channels    = audioNumChannels;
 	c->time_base.num = 1;
 	c->time_base.den = c->sample_rate;
-	LOGI("addAudioStream sample_rate %d", c->sample_rate);
-	//LOGI("add_audio_stream parameters: sample_fmt: %d bit_rate: %d sample_rate: %d", codec_audio_sample_fmt, bit_rate, audio_sample_rate);
-
-    // TODO: need this?
-	// Some formats want stream headers to be separate.
-	if (formatContext->oformat->flags & AVFMT_GLOBALHEADER) {
-		LOGD("addVideoStream: use separate headers");
-		c->flags |= CODEC_FLAG_GLOBAL_HEADER;
-    }
 }
 
 // get the format context based on the format name and output path
@@ -171,32 +146,36 @@ AVFormatContext* avFormatContextForOutputPath(const char *path, const char *form
     LOGI("avFormatContextForOutputPath format: %s path: %s", formatName, path);
     int openOutputValue = avformat_alloc_output_context2(&outputFormatContext, NULL, formatName, path);
     if (openOutputValue < 0) {
-        avformat_free_context(outputFormatContext);
+        LOGE("Error getting format context for output path: %s", av_err2str(openOutputValue));
     }
     return outputFormatContext;
 }
 
 // open a file for writing
 int openForWriting(AVFormatContext *avfc, const char *path){
+    int openForWritingResult = 0;
+
     if (!(avfc->oformat->flags & AVFMT_NOFILE)) {
         LOGI("Opening output file for writing at path %s", path);
-        return avio_open(&avfc->pb, path, AVIO_FLAG_WRITE);
+        openForWritingResult = avio_open(&avfc->pb, path, AVIO_FLAG_WRITE);
+        if (openForWritingResult < 0) {
+            LOGE("Could not open '%s': %s", path, av_err2str(openForWritingResult));
+        }
+        return openForWritingResult;
+    } else {
+        LOGD("this format does not require a file");
+        return 0;
     }
-    LOGD("this format does not require a file");
-    return 0;
 }
 
 // write the header into the output file
 int writeHeader(AVFormatContext *avfc){
-    AVDictionary *options = NULL;
-
-    int writeHeaderResult = avformat_write_header(avfc, &options);
+    int writeHeaderResult = avformat_write_header(avfc, NULL);
     if (writeHeaderResult < 0) {
-        LOGE("Error writing header: %s", stringForAVErrorNumber(writeHeaderResult));
-        av_dict_free(&options);
+        LOGE("Error writing header: %s", av_err2str(writeHeaderResult));
+    } else {
+        LOGI("Wrote file header result: %d", writeHeaderResult);
     }
-    LOGI("Wrote file header");
-    av_dict_free(&options);
     return writeHeaderResult;
 }
 
@@ -236,12 +215,12 @@ JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_prepareAVFormatCon
     init();
 
     // Create AVRational that expects timestamps in microseconds
-    videoSourceTimeBase = av_malloc(sizeof(AVRational));
-    videoSourceTimeBase->num = 1;
-    videoSourceTimeBase->den = 1000000;
-    audioSourceTimeBase = av_malloc(sizeof(AVRational));
-	audioSourceTimeBase->num = 1;
-	audioSourceTimeBase->den = 1000000;
+//    videoSourceTimeBase = av_malloc(sizeof(AVRational));
+//    videoSourceTimeBase->num = 1;
+//    videoSourceTimeBase->den = 1000000;
+//    audioSourceTimeBase = av_malloc(sizeof(AVRational));
+//    audioSourceTimeBase->num = 1;
+//    audioSourceTimeBase->den = 1000000;
 
     AVFormatContext *inputFormatContext;
     outputPath = (*env)->GetStringUTFChars(env, jOutputPath, NULL);
@@ -257,6 +236,8 @@ JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_prepareAVFormatCon
     if(result < 0){
         LOGE("openForWriting error: %d", result);
     }
+
+    avDumpFormat(outputFormatContext, 0, outputPath, 1);
 
     writeHeader(outputFormatContext);
 }
@@ -295,7 +276,7 @@ JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_writeAVPacketFromE
 
     int writeFrameResult = av_interleaved_write_frame(outputFormatContext, packet);
     if(writeFrameResult < 0){
-        LOGE("av_interleaved_write_frame video: %d pkt: %d size: %d error: %s", ((int) jIsVideo), videoFrameCount, ((int) jSize), stringForAVErrorNumber(writeFrameResult));
+        LOGE("av_interleaved_write_frame video: %d pkt: %d size: %d error: %s", ((int) jIsVideo), videoFrameCount, ((int) jSize), av_err2str(writeFrameResult));
     }
 
     av_free_packet(packet);
@@ -310,6 +291,11 @@ JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_finalizeAVFormatCo
     if(writeTrailerResult < 0){
         LOGE("av_write_trailer error: %d", writeTrailerResult);
     }
-}
 
+    if (!(outputFormatContext->oformat->flags & AVFMT_NOFILE)) {
+        avio_close(outputFormatContext->pb);
+    }
+
+    avformat_free_context(outputFormatContext);
+}
 

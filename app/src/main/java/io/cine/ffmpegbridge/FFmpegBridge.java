@@ -2,7 +2,7 @@
 // Copyright (c) 2014, cine.io. All rights reserved.
 //
 
-package io.cine.ffmpegwrapper;
+package io.cine.ffmpegbridge;
 
 import java.nio.ByteBuffer;
 

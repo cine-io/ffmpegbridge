@@ -11,6 +11,9 @@
 #include "ffmpegbridge_log.h"
 #include "logdump.h"
 
+//
+//-- helper functions
+//
 
 void _init_ffmpeg() {
   // initialize FFmpeg
@@ -87,12 +90,11 @@ AVStream* _add_stream(FFmpegBridgeContext *br_ctx, enum AVCodecID codec_id) {
 }
 
 void _add_video_stream(FFmpegBridgeContext *br_ctx) {
-  AVStream *st;
   AVCodecContext *c;
 
-  st = _add_stream(br_ctx, br_ctx->video_codec_id);
-  br_ctx->video_stream_index = st->index;
-  c = st->codec;
+  br_ctx->video_stream = _add_stream(br_ctx, br_ctx->video_codec_id);
+  br_ctx->video_stream_index = br_ctx->video_stream->index;
+  c = br_ctx->video_stream->codec;
 
   // video parameters
   c->codec_id = br_ctx->video_codec_id;
@@ -113,12 +115,11 @@ void _add_video_stream(FFmpegBridgeContext *br_ctx) {
 }
 
 void _add_audio_stream(FFmpegBridgeContext *br_ctx) {
-  AVStream *st;
   AVCodecContext *c;
 
-  st = _add_stream(br_ctx, br_ctx->audio_codec_id);
-  br_ctx->audio_stream_index = st->index;
-  c = st->codec;
+  br_ctx->audio_stream = _add_stream(br_ctx, br_ctx->audio_codec_id);
+  br_ctx->audio_stream_index = br_ctx->audio_stream->index;
+  c = br_ctx->audio_stream->codec;
 
   // audio parameters
   // TODO: keep this FF_COMPLIANCE_UNOFFICIAL?
@@ -151,6 +152,64 @@ void _write_header(FFmpegBridgeContext *br_ctx){
   }
 }
 
+uint8_t* _filter_packet(FFmpegBridgeContext *br_ctx, AVStream *st, AVPacket *packet) {
+  int rc = 0;
+  uint8_t *filtered_data;
+  int filtered_data_size = 0;
+
+  if (st->codec->codec_id == br_ctx->audio_codec_id) {
+    LOGD("About to filter audio packet buffer ...");
+    filtered_data = av_malloc(packet->size);
+    AVBitStreamFilterContext* bsfc = av_bitstream_filter_init("aac_adtstoasc");
+    if (!bsfc) {
+      LOGE("Error creating aac_adtstoasc bitstream filter.");
+    }
+    rc = av_bitstream_filter_filter(bsfc, st->codec, NULL,
+      &filtered_data, &filtered_data_size,
+      packet->data, packet->size,
+      packet->flags & AV_PKT_FLAG_KEY);
+    if (rc < 0) {
+      LOGE("ERROR: Failed to filter bitstream -- %s", av_err2str(rc));
+    }
+
+    // don't free packet->data, as it's owned by the JVM
+    packet->data = filtered_data;
+    packet->size = filtered_data_size;
+
+    return filtered_data;
+  } else {
+    return 0;
+  }
+}
+
+void _rescale_packet(FFmpegBridgeContext *br_ctx, AVStream *st, AVPacket *packet) {
+  LOGD("time bases: stream=%d/%d, codec=%d/%d, device=%d/%d",
+    st->time_base.num, st->time_base.den,
+    st->codec->time_base.num, st->codec->time_base.den,
+    (*br_ctx->device_time_base).num, (*br_ctx->device_time_base).den);
+
+  packet->pts = av_rescale_q(packet->pts, *(br_ctx->device_time_base), st->time_base);
+  packet->dts = av_rescale_q(packet->dts, *(br_ctx->device_time_base), st->time_base);
+  // COPIED: from ffmpeg remuxing.c
+  //packet->pts = av_rescale_q_rnd(packet->pts, *(br_ctx->device_time_base), st->time_base, AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX);
+  //packet->dts = av_rescale_q_rnd(packet->dts, *(br_ctx->device_time_base), st->time_base, AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX);
+  //packet->duration = av_rescale_q(packet->duration, *(br_ctx->device_time_base), st->time_base);
+  //packet->pos = -1;
+}
+
+void _write_packet(FFmpegBridgeContext *br_ctx, AVPacket *packet) {
+  int rc;
+
+  LOGD("writing frame to stream %d: (pts=%lld, size=%d)",
+    packet->stream_index, packet->pts, packet->size);
+
+  rc = av_interleaved_write_frame(br_ctx->output_fmt_ctx, packet);
+  if (rc < 0){
+    LOGE("ERROR: _write_packet stream (stream %d) -- %s",
+      packet->stream_index, av_err2str(rc));
+  }
+}
+
 void _write_trailer(FFmpegBridgeContext *br_ctx){
   LOGI("Writing trailer ...");
   int rc = av_write_trailer(br_ctx->output_fmt_ctx);
@@ -160,6 +219,9 @@ void _write_trailer(FFmpegBridgeContext *br_ctx){
 }
 
 
+//
+//-- FFmpegBridgeContext API
+//
 
 FFmpegBridgeContext* ffmpbr_init(
   const char* output_fmt_name,
@@ -219,6 +281,56 @@ void ffmpbr_prepare_stream(FFmpegBridgeContext *br_ctx, const char *output_url) 
   avDumpFormat(br_ctx->output_fmt_ctx, 0, output_url, 1);
 }
 
+void ffmpbr_write_header(FFmpegBridgeContext *br_ctx, const int8_t *video_codec_extradata,
+  int video_codec_extradata_size) {
+
+  br_ctx->video_stream->codec->extradata = malloc(video_codec_extradata_size);
+  br_ctx->video_stream->codec->extradata_size = video_codec_extradata_size;
+  memcpy(br_ctx->video_stream->codec->extradata, video_codec_extradata, video_codec_extradata_size);
+
+  _write_header(br_ctx);
+}
+
+void ffmpbr_write_packet(FFmpegBridgeContext *br_ctx, uint8_t *data, int data_size, long pts,
+    int is_video) {
+  AVPacket *packet;
+  AVStream *st;
+  AVCodecContext *c;
+  uint8_t *filtered_data = NULL;
+
+  packet = av_malloc(sizeof(AVPacket));
+  if (!packet) {
+    LOGE("ERROR: ffmpbr_write_packet couldn't allocate memory for the AVPacket");
+  }
+  av_init_packet(packet);
+
+  if (is_video) {
+    packet->stream_index = br_ctx->video_stream_index;
+  } else {
+    packet->stream_index = br_ctx->audio_stream_index;
+  }
+  packet->size = data_size;
+  packet->pts = packet->dts = pts;
+  packet->data = data;
+  st = br_ctx->output_fmt_ctx->streams[packet->stream_index];
+  c = st->codec;
+
+  // filter the packet (if necessary)
+  filtered_data = _filter_packet(br_ctx, st, packet);
+
+  // rescale the timing information for the packet
+  _rescale_packet(br_ctx, st, packet);
+
+  // write the frame
+  _write_packet(br_ctx, packet);
+
+  // clean up
+  if (filtered_data) {
+    av_free(filtered_data);
+  }
+  av_free_packet(packet);
+}
+
 void ffmpbr_finalize(FFmpegBridgeContext *br_ctx) {
   // write the file trailer
   _write_trailer(br_ctx);
@@ -233,5 +345,6 @@ void ffmpbr_finalize(FFmpegBridgeContext *br_ctx) {
   if (br_ctx->device_time_base) av_free(br_ctx->device_time_base);
   if (br_ctx->output_fmt_name) free(br_ctx->output_fmt_name);
   if (br_ctx->output_url) free(br_ctx->output_url);
+  if (br_ctx->video_stream->codec->extradata) free(br_ctx->video_stream->codec->extradata);
   free(br_ctx);
 }

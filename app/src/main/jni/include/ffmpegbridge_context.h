@@ -52,4 +52,10 @@ FFmpegBridgeContext* ffmpbr_init(
 
 void ffmpbr_prepare_stream(FFmpegBridgeContext *br_ctx, const char *output_url);
 
+void ffmpbr_write_header(FFmpegBridgeContext *br_ctx, const int8_t *video_codec_extradata,
+  int video_codec_extradata_size);
+
+void ffmpbr_write_packet(FFmpegBridgeContext *br_ctx, uint8_t *data, int data_size, long pts,
+    int is_video);
+
 void ffmpbr_finalize(FFmpegBridgeContext *br_ctx);

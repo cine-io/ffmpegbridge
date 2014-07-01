@@ -18,6 +18,8 @@ FFmpegBridgeContext* br_ctx;
 //
 // JNI interface
 //
+
+// TODO: rename to init()
 JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_setAVOptions
 (JNIEnv *env, jobject jThis, jobject jOpts) {
 
@@ -25,7 +27,7 @@ JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_setAVOptions
   int video_width, video_height, video_fps, video_bit_rate;
   int audio_sample_rate, audio_num_channels, audio_bit_rate;
 
-  LOGD("setAVOptions");
+  LOGD("init");
 
   // get the java object fields
   jclass ClassAVOptions = (*env)->GetObjectClass(env, jOpts);
@@ -62,12 +64,13 @@ JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_setAVOptions
   (*env)->ReleaseStringUTFChars(env, outputFormatNameString, output_fmt_name);
 }
 
+// TODO: possible to merge with init() above? if not, rename to prepareStream()
 JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_prepareAVFormatContext
 (JNIEnv * env, jobject self, jstring jOutputPath) {
 
   const char *output_url;
 
-  LOGD("prepareAVFormatContext");
+  LOGD("prepareStream");
 
   output_url = (*env)->GetStringUTFChars(env, jOutputPath, NULL);
 
@@ -77,10 +80,11 @@ JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_prepareAVFormatCon
   (*env)->ReleaseStringUTFChars(env, jOutputPath, output_url);
 }
 
+// TODO: rename to writeHeader()
 JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_writeVideoHeader
 (JNIEnv * env, jobject self, jbyteArray jData, jint jSize) {
 
-  LOGD("writeVideoHeader");
+  LOGD("writeHeader");
 
   jbyte* raw_bytes = (*env)->GetByteArrayElements(env, jData, NULL);
 
@@ -90,6 +94,7 @@ JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_writeVideoHeader
   (*env)->ReleaseByteArrayElements(env, jData, raw_bytes, 0);
 }
 
+// TODO: rename to writePacket()
 JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_writeAVPacketFromEncodedData
 (JNIEnv *env, jobject self, jobject jData, jint jIsVideo, jint jOffset,
  jint jSize, jint jFlags, jlong jPts) {
@@ -101,6 +106,7 @@ JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_writeAVPacketFromE
   ffmpbr_write_packet(br_ctx, data, (int)jSize, (long)jPts, is_video);
 }
 
+// TODO: rename to finalize()
 JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_finalizeAVFormatContext
 (JNIEnv *env, jobject self) {
 

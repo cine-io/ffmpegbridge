@@ -35,6 +35,7 @@ public class FFmpegBridge {
 
     public native void setAVOptions(AVOptions jOpts);
     public native void prepareAVFormatContext(String jOutputPath);
+    public native void writeVideoHeader(byte[] jData, int jSize);
     public native void writeAVPacketFromEncodedData(ByteBuffer jData, int jIsVideo, int jOffset, int jSize, int jFlags, long jPts);
     public native void finalizeAVFormatContext();
 
@@ -45,10 +46,15 @@ public class FFmpegBridge {
      * for retrieval.
      */
     static public class AVOptions{
+        String outputFormatName = "flv";
+
         int videoHeight = 1280;
         int videoWidth = 720;
+        int videoFps = 30;
+        int videoBitRate = 1500000;
 
         int audioSampleRate = 44100;
         int audioNumChannels = 1;
+        int audioBitRate = 128000;
     }
 }

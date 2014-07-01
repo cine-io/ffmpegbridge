@@ -25,6 +25,14 @@ JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_prepareAVFormatCon
 
 /*
  * Class:     io_cine_ffmpegbridge_FFmpegBridge
+ * Method:    writeVideoHeader
+ * Signature: (Ljava/nio/ByteBuffer;I)V
+ */
+JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_writeVideoHeader
+  (JNIEnv *, jobject, jbyteArray, jint);
+
+/*
+ * Class:     io_cine_ffmpegbridge_FFmpegBridge
  * Method:    writeAVPacketFromEncodedData
  * Signature: (Ljava/nio/ByteBuffer;IIIIJ)V
  */

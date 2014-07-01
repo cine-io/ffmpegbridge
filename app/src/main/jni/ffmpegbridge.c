@@ -1,3 +1,10 @@
+//
+// JNI FFmpeg bridge for muxing H.264 and AAC streams into an FLV container
+// for streaming over RTMP from an Android device.
+//
+// Copyright (c) 2014, cine.io. All rights reserved.
+//
+
 #include <jni.h>
 #include <android/log.h>
 #include "ffmpegbridge.h"
@@ -280,8 +287,6 @@ JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_prepareAVFormatCon
     }
 
     avDumpFormat(outputFormatContext, 0, outputPath, 1);
-
-    writeHeader(outputFormatContext);
 }
 
 JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_writeVideoHeader
@@ -308,7 +313,8 @@ JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_writeVideoHeader
 
     LOGD("Releasing JNI ByteArray elements.");
     (*env)->ReleaseByteArrayElements(env, jData, rawjBytes, 0);
-    return;
+
+    writeHeader(outputFormatContext);
 }
 
 JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_writeAVPacketFromEncodedData

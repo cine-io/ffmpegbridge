@@ -22,6 +22,8 @@ const char *outputPath;
 const char *outputFormatName;
 int audioStreamIndex = -1;
 int videoStreamIndex = -1;
+int videoFrameNumber = 0;
+int audioFrameNumber = 0;
 
 // A/V
 int VIDEO_CODEC_ID = CODEC_ID_H264;
@@ -49,10 +51,6 @@ AVRational *deviceTimeBase;
 // recycled across calls to writeAVPacketFromEncodedData
 AVPacket *packet;
 
-// debugging
-int videoFrameCount = 0;
-
-
 //
 //-- helper functions
 //
@@ -62,6 +60,16 @@ void init(){
     av_register_all();
     avformat_network_init();
     avcodec_register_all();
+}
+
+void logTimeBases(const char* where) {
+    AVStream *st;
+	int sc;
+
+	for (sc=0; sc<outputFormatContext->nb_streams; ++sc) {
+	    st = outputFormatContext->streams[sc];
+	    LOGD("%s: stream %d time base: %d/%d", where, sc, st->time_base.num, st->time_base.den);
+	}
 }
 
 // add a stream
@@ -124,11 +132,11 @@ void addVideoStream(AVFormatContext *dest){
 	// of which frame timestamps are represented. For fixed-fps content,
 	// timebase should be 1/framerate and timestamp increments should be
 	// identical to 1.
-	c->time_base.den = videoFps;
-	c->time_base.num = 1;
-
+	st->time_base.den = c->time_base.den = videoFps;
+	st->time_base.num = c->time_base.num = 1;
 	// TODO: need this?
 	//c->gop_size = 12; // emit one intra frame every twelve frames at most
+	logTimeBases("addVideoStream");
 }
 
 // add an audio stream
@@ -148,6 +156,7 @@ void addAudioStream(AVFormatContext *dest){
 	c->bit_rate    = audioBitRate;
     //c->time_base.num = 1;
     //c->time_base.den = c->sample_rate;
+	logTimeBases("addAudioStream");
 }
 
 // get the format context based on the format name and output path
@@ -187,9 +196,11 @@ int openForWriting(AVFormatContext *avfc, const char *path){
         if (openForWritingResult < 0) {
             LOGE("Could not open '%s': %s", path, av_err2str(openForWritingResult));
         }
+    	logTimeBases("openForWriting");
         return openForWritingResult;
     } else {
         LOGD("this format does not require a file");
+    	logTimeBases("openForWriting");
         return 0;
     }
 }
@@ -204,6 +215,7 @@ int writeHeader(AVFormatContext *avfc){
     } else {
         LOGI("Wrote file header result: %d", writeHeaderResult);
     }
+ 	logTimeBases("writeHeader");
     return writeHeaderResult;
 }
 
@@ -308,6 +320,8 @@ JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_writeVideoHeader
 
     LOGD("Releasing JNI ByteArray elements.");
     (*env)->ReleaseByteArrayElements(env, jData, rawjBytes, 0);
+    logTimeBases("writeVideoHeader");
+
     return;
 }
 
@@ -333,14 +347,18 @@ JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_writeAVPacketFromE
 
 	if ( ((int) jIsVideo) == JNI_TRUE) {
 		packet->stream_index = videoStreamIndex;
-    	videoFrameCount++;
+    	videoFrameNumber++;
+        packet->pts = packet->dts = 1024 * videoFrameNumber;
+        packet->duration = 1024;
 	} else {
 		packet->stream_index = audioStreamIndex;
+		audioFrameNumber++;
+        packet->pts = packet->dts = 1024 * audioFrameNumber;
+        packet->duration = 1024;
 	}
 
     packet->size = (int) jSize;
     packet->data = data;
-    packet->pts = packet->dts = (int) jPts;
     st = outputFormatContext->streams[packet->stream_index];
     c = st->codec;
 
@@ -377,18 +395,19 @@ JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_writeAVPacketFromE
          st->time_base.num, st->time_base.den,
          c->time_base.num, c->time_base.den,
          (*deviceTimeBase).num, (*deviceTimeBase).den);
-    packet->pts = av_rescale_q(packet->pts, *deviceTimeBase, st->time_base);
-    packet->dts = av_rescale_q(packet->dts, *deviceTimeBase, st->time_base);
+    // ORIGINAL:
+    //packet->pts = av_rescale_q(packet->pts, *deviceTimeBase, st->time_base);
+    //packet->dts = av_rescale_q(packet->dts, *deviceTimeBase, st->time_base);
     // COPIED: from ffmpeg remuxing.c
     //packet->pts = av_rescale_q_rnd(packet->pts, *deviceTimeBase, st->time_base, AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX);
     //packet->dts = av_rescale_q_rnd(packet->dts, *deviceTimeBase, st->time_base, AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX);
     //packet->duration = av_rescale_q(packet->duration, *deviceTimeBase, st->time_base);
-    //packet->pos = -1;
+    packet->pos = -1;
 
     LOGD("about to write frame to stream %d: (pts=%lld, size=%d)", packet->stream_index, packet->pts, packet->size);
     int writeFrameResult = av_interleaved_write_frame(outputFormatContext, packet);
     if(writeFrameResult < 0){
-        LOGE("av_interleaved_write_frame video: %d pkt: %d size: %d error: %s", ((int) jIsVideo), videoFrameCount, ((int) jSize), av_err2str(writeFrameResult));
+        LOGE("av_interleaved_write_frame video: %d pkt: %d size: %d error: %s", ((int) jIsVideo), videoFrameNumber, ((int) jSize), av_err2str(writeFrameResult));
     }
     LOGD("wrote frame");
 

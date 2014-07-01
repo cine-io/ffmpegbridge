@@ -9,7 +9,7 @@ LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
 LOCAL_MODULE := ffmpegbridge
-LOCAL_SRC_FILES := ffmpegbridge.c logdump.c
+LOCAL_SRC_FILES := ffmpegbridge.c ffmpegbridge_context.c logdump.c
 LOCAL_CFLAGS := -I$(LOCAL_PATH)/include -I$(LOCAL_PATH)/../prebuilt/include
 LOCAL_LDLIBS += -llog
 LOCAL_LDLIBS += -L$(LOCAL_PATH)/../prebuilt/lib

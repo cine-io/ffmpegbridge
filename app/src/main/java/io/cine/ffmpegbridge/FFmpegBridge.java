@@ -27,8 +27,9 @@ import android.util.Log;
  * Methods of this class must be called in the following order:
  * 1. (optional) setAVOptions
  * 2. prepareAVFormatContext
- * 3. (repeat for each packet) writeAVPacketFromEncodedData
- * 4. finalizeAVFormatContext
+ * 3. writeVideoHeader
+ * 4. (repeat for each packet) writeAVPacketFromEncodedData
+ * 5. finalizeAVFormatContext
  */
 public class FFmpegBridge {
 

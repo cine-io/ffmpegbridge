@@ -1,4 +1,9 @@
 //
+// JNI FFmpeg bridge for muxing H.264 and AAC streams into an FLV container
+// for streaming over RTMP from an Android device.
+//
+// This file requires that libffmpegbridge.so is installed in src/main/jniLibs.
+//
 // Copyright (c) 2014, cine.io. All rights reserved.
 //
 
@@ -9,8 +14,6 @@ import java.nio.ByteBuffer;
 import android.util.Log;
 
 /**
- * Copyright (c) 2014, cine.io. All rights reserved.
- *
  * A bridge to the FFmpeg C libraries.
  *
  * Based on: http://ffmpeg.org/doxygen/trunk/muxing_8c_source.html
@@ -40,10 +43,8 @@ public class FFmpegBridge {
     public native void finalizeAVFormatContext();
 
     /**
-     * Used to configure the muxer's options.
-     * Note the name of this class's fields
-     * have to be hardcoded in the native method
-     * for retrieval.
+     * Used to configure the muxer's options. Note the name of this class's
+     * fields have to be hardcoded in the native method for retrieval.
      */
     static public class AVOptions{
         String outputFormatName = "flv";

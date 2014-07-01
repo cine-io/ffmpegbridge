@@ -1,3 +1,10 @@
+//
+// JNI FFmpeg bridge for muxing H.264 and AAC streams into an FLV container
+// for streaming over RTMP from an Android device.
+//
+// Copyright (c) 2014, cine.io. All rights reserved.
+//
+
 #include <jni.h>
 #include <android/log.h>
 #include "ffmpegbridge.h"

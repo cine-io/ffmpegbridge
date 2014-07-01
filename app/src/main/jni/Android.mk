@@ -1,3 +1,9 @@
+#
+# Makefile to build the libffmpegbridge.so library.
+#
+# Copyright (c) 2014, cine.io. All rights reserved.
+#
+
 LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)

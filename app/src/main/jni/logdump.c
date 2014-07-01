@@ -1,3 +1,9 @@
+//
+// Crude port of av_dump_format into a version that will log through the
+// Android logging facilities.
+//
+// Copyright (c) 2014, cine.io. All rights reserved.
+//
 
 #include <stdio.h>
 #include <stdint.h>
@@ -13,7 +19,11 @@
 #include "libavformat/avformat.h"
 
 
+// This is where the magic happens. The rest of the changes were simply
+// changing things from using snake_case to CamlCase to avoid symbol
+// duplication.
 #define avLog(a, b, ...) __android_log_print(ANDROID_LOG_DEBUG, "ffmpegbridge", __VA_ARGS__)
+
 
 static void printFps(double d, const char *postfix)
 {

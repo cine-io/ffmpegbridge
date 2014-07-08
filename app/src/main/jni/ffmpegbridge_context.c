@@ -291,6 +291,7 @@ void ffmpbr_prepare_stream(FFmpegBridgeContext *br_ctx, const char *output_url) 
 void ffmpbr_write_header(FFmpegBridgeContext *br_ctx, const int8_t *video_codec_extradata,
   int video_codec_extradata_size) {
 
+  // this will automatically be freed by avformat_free_context() during ffmpbr_finalize()
   br_ctx->video_stream->codec->extradata = av_malloc(video_codec_extradata_size);
   br_ctx->video_stream->codec->extradata_size = video_codec_extradata_size;
   memcpy(br_ctx->video_stream->codec->extradata, video_codec_extradata, video_codec_extradata_size);
@@ -358,11 +359,6 @@ void ffmpbr_finalize(FFmpegBridgeContext *br_ctx) {
   if (br_ctx->output_fmt_name) av_free(br_ctx->output_fmt_name);
   LOGD("cleaning up output_url ...");
   if (br_ctx->output_url) av_free(br_ctx->output_url);
-  //LOGD("cleaning up video_stream->codec->extradata ...");
-  //LOGD("br_ctx->video_stream: %p ...", br_ctx->video_stream);
-  //LOGD("br_ctx->video_stream->codec: %p ...", br_ctx->video_stream->codec);
-  //LOGD("br_ctx->video_stream->codec->extradata: %p ...", br_ctx->video_stream->codec->extradata);
-  //if (br_ctx->video_stream->codec->extradata) av_free(br_ctx->video_stream->codec->extradata);
   LOGD("cleaning up output_fmt_ctx: %p ...", br_ctx->output_fmt_ctx);
   if (br_ctx->output_fmt_ctx) avformat_free_context(br_ctx->output_fmt_ctx);
   LOGD("cleaning up br_ctx: %p ...", br_ctx);

@@ -57,7 +57,7 @@ JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_setAVOptions
   audio_bit_rate = (*env)->GetIntField(env, jOpts, jAudioBitRateId);
 
   // initialize our context
-  FFmpegBridgeContext* br_ctx = ffmpbr_init(output_fmt_name,
+  br_ctx = ffmpbr_init(output_fmt_name,
     video_width, video_height, video_fps, video_bit_rate,
     audio_sample_rate, audio_num_channels, audio_bit_rate);
 
@@ -73,6 +73,8 @@ JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_prepareAVFormatCon
   LOGD("prepareStream");
 
   output_url = (*env)->GetStringUTFChars(env, jOutputPath, NULL);
+
+  LOGD("output_url: %s", output_url);
 
   // prepare the stream
   ffmpbr_prepare_stream(br_ctx, output_url);

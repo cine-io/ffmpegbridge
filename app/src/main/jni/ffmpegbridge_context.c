@@ -5,7 +5,6 @@
 //
 
 #include <string.h>
-#include <malloc.h>
 
 #include "ffmpegbridge_context.h"
 #include "ffmpegbridge_log.h"
@@ -86,6 +85,7 @@ AVStream* _add_stream(FFmpegBridgeContext *br_ctx, enum AVCodecID codec_id) {
     c->flags |= CODEC_FLAG_GLOBAL_HEADER;
   }
 
+  LOGD("_add_stream st: %p", st);
   return st;
 }
 
@@ -234,7 +234,7 @@ FFmpegBridgeContext* ffmpbr_init(
   int audio_bit_rate) {
 
   // allocate the memory
-  FFmpegBridgeContext *br_ctx = malloc(sizeof(FFmpegBridgeContext));
+  FFmpegBridgeContext *br_ctx = av_malloc(sizeof(FFmpegBridgeContext));
 
   // defaults -- likely not overridden
   br_ctx->video_codec_id = CODEC_ID_H264;
@@ -243,7 +243,7 @@ FFmpegBridgeContext* ffmpbr_init(
   br_ctx->audio_sample_fmt = AV_SAMPLE_FMT_S16;
 
   // propagate the configuration
-  br_ctx->output_fmt_name = strdup(output_fmt_name);
+  br_ctx->output_fmt_name = av_strdup(output_fmt_name);
   br_ctx->video_width = video_width;
   br_ctx->video_height = video_height;
   br_ctx->video_fps = video_fps;
@@ -264,27 +264,34 @@ FFmpegBridgeContext* ffmpbr_init(
 void ffmpbr_prepare_stream(FFmpegBridgeContext *br_ctx, const char *output_url) {
   int rc;
 
-  br_ctx->output_url = strdup(output_url);
+  LOGD("duplicating output_url ...");
+  LOGD("br_ctx: %p ...", br_ctx);
+  br_ctx->output_url = av_strdup(output_url);
 
   // initialize our output format context
+  LOGD("initializing output_fmt_context ...");
   _init_output_fmt_context(br_ctx);
 
   // set up the streams
+  LOGD("adding video stream ...");
   _add_video_stream(br_ctx);
+  LOGD("adding audio stream ...");
   _add_audio_stream(br_ctx);
 
+  LOGD("opening output url ...");
   rc = _open_output_url(br_ctx);
   if (rc < 0){
     LOGE("ERROR: ffmpbr_prepare_stream error -- %s", av_err2str(rc));
   }
 
+  LOGD("logging (dumping) output_fmt_ctx log ...");
   avDumpFormat(br_ctx->output_fmt_ctx, 0, output_url, 1);
 }
 
 void ffmpbr_write_header(FFmpegBridgeContext *br_ctx, const int8_t *video_codec_extradata,
   int video_codec_extradata_size) {
 
-  br_ctx->video_stream->codec->extradata = malloc(video_codec_extradata_size);
+  br_ctx->video_stream->codec->extradata = av_malloc(video_codec_extradata_size);
   br_ctx->video_stream->codec->extradata_size = video_codec_extradata_size;
   memcpy(br_ctx->video_stream->codec->extradata, video_codec_extradata, video_codec_extradata_size);
 
@@ -333,18 +340,31 @@ void ffmpbr_write_packet(FFmpegBridgeContext *br_ctx, uint8_t *data, int data_si
 
 void ffmpbr_finalize(FFmpegBridgeContext *br_ctx) {
   // write the file trailer
+  LOGD("br_ctx: %p", br_ctx);
+  LOGD("calling _write_trailer ...");
   _write_trailer(br_ctx);
 
   // close the output file
+  LOGD("checking for AVFMT_NOFILE ...");
   if (!(br_ctx->output_fmt_ctx->oformat->flags & AVFMT_NOFILE)) {
+    LOGD("closing file / stream ...");
     avio_close(br_ctx->output_fmt_ctx->pb);
   }
 
   // clean up memory
-  if (br_ctx->output_fmt_ctx) avformat_free_context(br_ctx->output_fmt_ctx);
+  LOGD("cleaning up device_time_base ...");
   if (br_ctx->device_time_base) av_free(br_ctx->device_time_base);
-  if (br_ctx->output_fmt_name) free(br_ctx->output_fmt_name);
-  if (br_ctx->output_url) free(br_ctx->output_url);
-  if (br_ctx->video_stream->codec->extradata) free(br_ctx->video_stream->codec->extradata);
-  free(br_ctx);
+  LOGD("cleaning up output_fmt_name ...");
+  if (br_ctx->output_fmt_name) av_free(br_ctx->output_fmt_name);
+  LOGD("cleaning up output_url ...");
+  if (br_ctx->output_url) av_free(br_ctx->output_url);
+  //LOGD("cleaning up video_stream->codec->extradata ...");
+  //LOGD("br_ctx->video_stream: %p ...", br_ctx->video_stream);
+  //LOGD("br_ctx->video_stream->codec: %p ...", br_ctx->video_stream->codec);
+  //LOGD("br_ctx->video_stream->codec->extradata: %p ...", br_ctx->video_stream->codec->extradata);
+  //if (br_ctx->video_stream->codec->extradata) av_free(br_ctx->video_stream->codec->extradata);
+  LOGD("cleaning up output_fmt_ctx: %p ...", br_ctx->output_fmt_ctx);
+  if (br_ctx->output_fmt_ctx) avformat_free_context(br_ctx->output_fmt_ctx);
+  LOGD("cleaning up br_ctx: %p ...", br_ctx);
+  av_free(br_ctx);
 }

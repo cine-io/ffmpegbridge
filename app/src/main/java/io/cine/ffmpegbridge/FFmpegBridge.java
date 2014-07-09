@@ -25,38 +25,39 @@ import android.util.Log;
  * integer samples, one center channel)
  *
  * Methods of this class must be called in the following order:
- * 1. (optional) setAVOptions
- * 2. prepareAVFormatContext
- * 3. writeVideoHeader
- * 4. (repeat for each packet) writeAVPacketFromEncodedData
- * 5. finalizeAVFormatContext
+ * 1. init
+ * 2. setAudioCodecExtraData and setVideoCodecExtraData
+ * 3. writeHeader
+ * 4. (repeat for each packet) writePacket
+ * 5. finalize
  */
 public class FFmpegBridge {
+  static {
+      System.loadLibrary("ffmpegbridge");
+  }
 
-    static {
-        System.loadLibrary("ffmpegbridge");
-    }
+  public native void init(AVOptions jOpts);
+  public native void setAudioCodecExtraData(byte[] jData, int jSize);
+  public native void setVideoCodecExtraData(byte[] jData, int jSize);
+  public native void writeHeader();
+  public native void writePacket(ByteBuffer jData, int jSize, long jPts, int jIsVideo, int jIsVideoKeyframe);
+  public native void finalize();
 
-    public native void setAVOptions(AVOptions jOpts);
-    public native void prepareAVFormatContext(String jOutputPath);
-    public native void writeVideoHeader(byte[] jData, int jSize);
-    public native void writeAVPacketFromEncodedData(ByteBuffer jData, int jIsVideo, int jOffset, int jSize, int jFlags, long jPts);
-    public native void finalizeAVFormatContext();
+  /**
+   * Used to configure the muxer's options. Note the name of this class's
+   * fields have to be hardcoded in the native method for retrieval.
+   */
+  static public class AVOptions {
+    public String outputFormatName = "flv";
+    public String outputUrl = "test.flv";
 
-    /**
-     * Used to configure the muxer's options. Note the name of this class's
-     * fields have to be hardcoded in the native method for retrieval.
-     */
-    static public class AVOptions{
-        String outputFormatName = "flv";
+    public int videoHeight = 1280;
+    public int videoWidth = 720;
+    public int videoFps = 30;
+    public int videoBitRate = 1500000;
 
-        int videoHeight = 1280;
-        int videoWidth = 720;
-        int videoFps = 30;
-        int videoBitRate = 1500000;
-
-        int audioSampleRate = 44100;
-        int audioNumChannels = 1;
-        int audioBitRate = 128000;
-    }
+    public int audioSampleRate = 44100;
+    public int audioNumChannels = 1;
+    public int audioBitRate = 128000;
+  }
 }

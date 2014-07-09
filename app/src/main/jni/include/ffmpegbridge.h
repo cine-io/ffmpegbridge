@@ -9,42 +9,50 @@ extern "C" {
 #endif
 /*
  * Class:     io_cine_ffmpegbridge_FFmpegBridge
- * Method:    setAVOptions
+ * Method:    init
  * Signature: (Lio/cine/ffmpegbridge/FFmpegBridge/AVOptions;)V
  */
-JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_setAVOptions
+JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_init
   (JNIEnv *, jobject, jobject);
 
 /*
  * Class:     io_cine_ffmpegbridge_FFmpegBridge
- * Method:    prepareAVFormatContext
- * Signature: (Ljava/lang/String;)V
- */
-JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_prepareAVFormatContext
-  (JNIEnv *, jobject, jstring);
-
-/*
- * Class:     io_cine_ffmpegbridge_FFmpegBridge
- * Method:    writeVideoHeader
+ * Method:    setAudioCodecExtraData
  * Signature: (Ljava/nio/ByteBuffer;I)V
  */
-JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_writeVideoHeader
+JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_setAudioCodecExtraData
   (JNIEnv *, jobject, jbyteArray, jint);
 
 /*
  * Class:     io_cine_ffmpegbridge_FFmpegBridge
- * Method:    writeAVPacketFromEncodedData
- * Signature: (Ljava/nio/ByteBuffer;IIIIJ)V
+ * Method:    setVideoCodecExtraData
+ * Signature: (Ljava/nio/ByteBuffer;I)V
  */
-JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_writeAVPacketFromEncodedData
-  (JNIEnv *, jobject, jobject, jint, jint, jint, jint, jlong);
+JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_setVideoCodecExtraData
+  (JNIEnv *, jobject, jbyteArray, jint);
 
 /*
  * Class:     io_cine_ffmpegbridge_FFmpegBridge
- * Method:    finalizeAVFormatContext
+ * Method:    writeHeader
  * Signature: ()V
  */
-JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_finalizeAVFormatContext
+JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_writeHeader
+  (JNIEnv *, jobject);
+
+/*
+ * Class:     io_cine_ffmpegbridge_FFmpegBridge
+ * Method:    writePacket
+ * Signature: (Ljava/nio/ByteBuffer;ILII)V
+ */
+JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_writePacket
+(JNIEnv *, jobject, jobject, jint, jlong, jint, jint);
+
+/*
+ * Class:     io_cine_ffmpegbridge_FFmpegBridge
+ * Method:    finalize
+ * Signature: ()V
+ */
+JNIEXPORT void JNICALL Java_io_cine_ffmpegbridge_FFmpegBridge_finalize
   (JNIEnv *, jobject);
 
 #ifdef __cplusplus

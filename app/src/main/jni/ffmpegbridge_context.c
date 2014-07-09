@@ -38,6 +38,8 @@ void _init_output_fmt_context(FFmpegBridgeContext *br_ctx) {
     LOGE("Error getting format context for output path: %s", av_err2str(rc));
   }
 
+  br_ctx->output_fmt_ctx->start_time_realtime = 0;
+
   fmt = br_ctx->output_fmt_ctx->oformat;
   fmt->video_codec = br_ctx->video_codec_id;
   fmt->audio_codec = br_ctx->audio_codec_id;
@@ -50,6 +52,21 @@ void _init_output_fmt_context(FFmpegBridgeContext *br_ctx) {
   LOGD("fmt->video_codec: %d", fmt->video_codec);
   LOGD("fmt->subtitle_codec: %d", fmt->subtitle_codec);
   LOGD("fmt->flags: %d", fmt->flags);
+}
+
+void _log_codec_attributes(AVCodecContext *codec) {
+  int i;
+
+  LOGD("br_ctx->audio_stream->codec->codec_type: %d", codec->codec_type);
+  LOGD("br_ctx->audio_stream->codec->codec_id: %d", codec->codec_id);
+  LOGD("br_ctx->audio_stream->codec->codec_tag: %d", codec->codec_tag);
+  LOGD("br_ctx->audio_stream->codec->stream_codec_tag: %d", codec->stream_codec_tag);
+  LOGD("br_ctx->audio_stream->codec->flags: %d", codec->flags);
+  LOGD("br_ctx->audio_stream->codec->flags2: %d", codec->flags2);
+  LOGD("br_ctx->audio_stream->codec->extradata_size: %d", codec->extradata_size);
+  for (i=0; i<codec->extradata_size; ++i) {
+      LOGD(">codec->extradata byte: 0x%x", codec->extradata[i]);
+  }
 }
 
 AVStream* _add_stream(FFmpegBridgeContext *br_ctx, enum AVCodecID codec_id) {
@@ -78,7 +95,6 @@ AVStream* _add_stream(FFmpegBridgeContext *br_ctx, enum AVCodecID codec_id) {
   c = st->codec;
   LOGI("_add_stream at index %d", st->index);
 
-  // TODO: need this?
   // Some formats want stream headers to be separate.
   if (br_ctx->output_fmt_ctx->oformat->flags & AVFMT_GLOBALHEADER) {
     LOGD("_add_stream: using separate headers");
@@ -109,9 +125,6 @@ void _add_video_stream(FFmpegBridgeContext *br_ctx) {
   // identical to 1.
   c->time_base.den = br_ctx->video_fps;
   c->time_base.num = 1;
-
-  // TODO: need this?
-  //c->gop_size = 12; // emit one intra frame every twelve frames at most
 }
 
 void _add_audio_stream(FFmpegBridgeContext *br_ctx) {
@@ -122,7 +135,6 @@ void _add_audio_stream(FFmpegBridgeContext *br_ctx) {
   c = br_ctx->audio_stream->codec;
 
   // audio parameters
-  // TODO: keep this FF_COMPLIANCE_UNOFFICIAL?
   c->strict_std_compliance = FF_COMPLIANCE_UNOFFICIAL; // for native aac support
   c->sample_fmt  = br_ctx->audio_sample_fmt;
   c->sample_rate = br_ctx->audio_sample_rate;
@@ -141,14 +153,6 @@ int _open_output_url(FFmpegBridgeContext *br_ctx){
   } else {
     LOGD("This format does not require a file.");
     return 0;
-  }
-}
-
-void _write_header(FFmpegBridgeContext *br_ctx){
-  LOGI("Writing header ...");
-  int rc = avformat_write_header(br_ctx->output_fmt_ctx, NULL);
-  if (rc < 0) {
-    LOGE("Error writing header: %s", av_err2str(rc));
   }
 }
 
@@ -190,11 +194,6 @@ void _rescale_packet(FFmpegBridgeContext *br_ctx, AVStream *st, AVPacket *packet
 
   packet->pts = av_rescale_q(packet->pts, *(br_ctx->device_time_base), st->time_base);
   packet->dts = av_rescale_q(packet->dts, *(br_ctx->device_time_base), st->time_base);
-  // COPIED: from ffmpeg remuxing.c
-  //packet->pts = av_rescale_q_rnd(packet->pts, *(br_ctx->device_time_base), st->time_base, AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX);
-  //packet->dts = av_rescale_q_rnd(packet->dts, *(br_ctx->device_time_base), st->time_base, AV_ROUND_NEAR_INF|AV_ROUND_PASS_MINMAX);
-  //packet->duration = av_rescale_q(packet->duration, *(br_ctx->device_time_base), st->time_base);
-  //packet->pos = -1;
 }
 
 void _write_packet(FFmpegBridgeContext *br_ctx, AVPacket *packet) {
@@ -225,6 +224,7 @@ void _write_trailer(FFmpegBridgeContext *br_ctx){
 
 FFmpegBridgeContext* ffmpbr_init(
   const char* output_fmt_name,
+  const char* output_url,
   int video_width,
   int video_height,
   int video_fps,
@@ -232,6 +232,8 @@ FFmpegBridgeContext* ffmpbr_init(
   int audio_sample_rate,
   int audio_num_channels,
   int audio_bit_rate) {
+
+  int rc;
 
   // allocate the memory
   FFmpegBridgeContext *br_ctx = av_malloc(sizeof(FFmpegBridgeContext));
@@ -244,6 +246,7 @@ FFmpegBridgeContext* ffmpbr_init(
 
   // propagate the configuration
   br_ctx->output_fmt_name = av_strdup(output_fmt_name);
+  br_ctx->output_url = av_strdup(output_url);
   br_ctx->video_width = video_width;
   br_ctx->video_height = video_height;
   br_ctx->video_fps = video_fps;
@@ -257,16 +260,6 @@ FFmpegBridgeContext* ffmpbr_init(
 
   // initialize our device time_base
   _init_device_time_base(br_ctx);
-
-  return br_ctx;
-}
-
-void ffmpbr_prepare_stream(FFmpegBridgeContext *br_ctx, const char *output_url) {
-  int rc;
-
-  LOGD("duplicating output_url ...");
-  LOGD("br_ctx: %p ...", br_ctx);
-  br_ctx->output_url = av_strdup(output_url);
 
   // initialize our output format context
   LOGD("initializing output_fmt_context ...");
@@ -286,25 +279,46 @@ void ffmpbr_prepare_stream(FFmpegBridgeContext *br_ctx, const char *output_url) 
 
   LOGD("logging (dumping) output_fmt_ctx log ...");
   avDumpFormat(br_ctx->output_fmt_ctx, 0, output_url, 1);
+
+  return br_ctx;
 }
 
-void ffmpbr_write_header(FFmpegBridgeContext *br_ctx, const int8_t *video_codec_extradata,
-  int video_codec_extradata_size) {
+void ffmpbr_set_audio_codec_extradata(FFmpegBridgeContext *br_ctx, const int8_t *codec_extradata,
+  int codec_extradata_size) {
 
   // this will automatically be freed by avformat_free_context() during ffmpbr_finalize()
-  br_ctx->video_stream->codec->extradata = av_malloc(video_codec_extradata_size);
-  br_ctx->video_stream->codec->extradata_size = video_codec_extradata_size;
-  memcpy(br_ctx->video_stream->codec->extradata, video_codec_extradata, video_codec_extradata_size);
+  br_ctx->audio_stream->codec->extradata = av_malloc(codec_extradata_size);
+  br_ctx->audio_stream->codec->extradata_size = codec_extradata_size;
+  memcpy(br_ctx->audio_stream->codec->extradata, codec_extradata, codec_extradata_size);
 
-  _write_header(br_ctx);
+  _log_codec_attributes(br_ctx->audio_stream->codec);
+}
+
+void ffmpbr_set_video_codec_extradata(FFmpegBridgeContext *br_ctx, const int8_t *codec_extradata,
+  int codec_extradata_size) {
+
+  // this will automatically be freed by avformat_free_context() during ffmpbr_finalize()
+  br_ctx->video_stream->codec->extradata = av_malloc(codec_extradata_size);
+  br_ctx->video_stream->codec->extradata_size = codec_extradata_size;
+  memcpy(br_ctx->video_stream->codec->extradata, codec_extradata, codec_extradata_size);
+
+  _log_codec_attributes(br_ctx->video_stream->codec);
+}
+
+void ffmpbr_write_header(FFmpegBridgeContext *br_ctx) {
+  LOGI("Writing header ...");
+  int rc = avformat_write_header(br_ctx->output_fmt_ctx, NULL);
+  if (rc < 0) {
+    LOGE("Error writing header: %s", av_err2str(rc));
+  }
 }
 
 void ffmpbr_write_packet(FFmpegBridgeContext *br_ctx, uint8_t *data, int data_size, long pts,
-    int is_video) {
+    int is_video, int is_video_keyframe) {
   AVPacket *packet;
   AVStream *st;
   AVCodecContext *c;
-  uint8_t *filtered_data = NULL;
+  uint8_t *filtered_data = NULL, *keyframe_data = NULL;
 
   packet = av_malloc(sizeof(AVPacket));
   if (!packet) {
@@ -314,6 +328,9 @@ void ffmpbr_write_packet(FFmpegBridgeContext *br_ctx, uint8_t *data, int data_si
 
   if (is_video) {
     packet->stream_index = br_ctx->video_stream_index;
+    if (is_video_keyframe) {
+      packet->flags |= AV_PKT_FLAG_KEY;
+    }
   } else {
     packet->stream_index = br_ctx->audio_stream_index;
   }
@@ -336,31 +353,25 @@ void ffmpbr_write_packet(FFmpegBridgeContext *br_ctx, uint8_t *data, int data_si
   if (filtered_data) {
     av_free(filtered_data);
   }
+  if (keyframe_data) {
+    av_free(keyframe_data);
+  }
   av_free_packet(packet);
 }
 
 void ffmpbr_finalize(FFmpegBridgeContext *br_ctx) {
   // write the file trailer
-  LOGD("br_ctx: %p", br_ctx);
-  LOGD("calling _write_trailer ...");
   _write_trailer(br_ctx);
 
   // close the output file
-  LOGD("checking for AVFMT_NOFILE ...");
   if (!(br_ctx->output_fmt_ctx->oformat->flags & AVFMT_NOFILE)) {
-    LOGD("closing file / stream ...");
     avio_close(br_ctx->output_fmt_ctx->pb);
   }
 
   // clean up memory
-  LOGD("cleaning up device_time_base ...");
   if (br_ctx->device_time_base) av_free(br_ctx->device_time_base);
-  LOGD("cleaning up output_fmt_name ...");
   if (br_ctx->output_fmt_name) av_free(br_ctx->output_fmt_name);
-  LOGD("cleaning up output_url ...");
   if (br_ctx->output_url) av_free(br_ctx->output_url);
-  LOGD("cleaning up output_fmt_ctx: %p ...", br_ctx->output_fmt_ctx);
   if (br_ctx->output_fmt_ctx) avformat_free_context(br_ctx->output_fmt_ctx);
-  LOGD("cleaning up br_ctx: %p ...", br_ctx);
   av_free(br_ctx);
 }
